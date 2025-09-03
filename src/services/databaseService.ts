@@ -6,6 +6,7 @@ export interface ITask {
   image_filepath: string;
   image_webview_path?: string;
   image_base64?: string;
+  completed: boolean;
   created_at?: string;
 }
 
@@ -92,6 +93,7 @@ class DatabaseService {
         ...task,
         id: this.generateId(),
         created_at: new Date().toISOString(),
+        completed: false,
         image_base64: image_base64
       };
       
@@ -147,6 +149,23 @@ class DatabaseService {
       this.saveTasksToStorage(tasks);
     } catch (error) {
       console.error('Error updating task:', error);
+      throw error;
+    }
+  }
+
+  async toggleTaskCompletion(id: number): Promise<void> {
+    try {
+      const tasks = this.getStoredTasks();
+      const taskIndex = tasks.findIndex(task => task.id === id);
+      
+      if (taskIndex === -1) {
+        throw new Error('Task not found');
+      }
+      
+      tasks[taskIndex].completed = !tasks[taskIndex].completed;
+      this.saveTasksToStorage(tasks);
+    } catch (error) {
+      console.error('Error toggling task completion:', error);
       throw error;
     }
   }
