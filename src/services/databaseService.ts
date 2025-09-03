@@ -1,4 +1,5 @@
 import { Capacitor } from '@capacitor/core';
+import { CapacitorSQLite, SQLiteConnection, SQLiteDBConnection } from '@capacitor-community/sqlite';
 
 export interface ITask {
   id?: number;
@@ -13,9 +14,15 @@ export interface ITask {
 class DatabaseService {
   private isWeb: boolean;
   private readonly storageKey = 'ionic-tasks';
+  private sqlite: SQLiteConnection | null = null;
+  private db: SQLiteDBConnection | null = null;
+  private readonly dbName = 'tasks.db';
 
   constructor() {
     this.isWeb = Capacitor.getPlatform() === 'web';
+    if (!this.isWeb) {
+      this.sqlite = new SQLiteConnection(CapacitorSQLite);
+    }
   }
 
   async initializeDatabase(): Promise<void> {
@@ -26,10 +33,49 @@ class DatabaseService {
         }
         console.log('Web storage initialized successfully');
       } else {
-        console.log('Mobile storage initialized successfully');
+        if (!this.sqlite) {
+          throw new Error('SQLite not initialized');
+        }
+
+        this.db = await this.sqlite.createConnection(
+          this.dbName,
+          false,
+          'no-encryption',
+          1,
+          false
+        );
+
+        await this.db.open();
+
+        await this.createSQLiteTables();
+        
       }
     } catch (error) {
       console.error('Error initializing database:', error);
+      throw error;
+    }
+  }
+
+  private async createSQLiteTables(): Promise<void> {
+    if (!this.db) throw new Error('SQLite database not initialized');
+
+    const createTasksTable = `
+      CREATE TABLE IF NOT EXISTS tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        text TEXT NOT NULL,
+        image_filepath TEXT,
+        image_webview_path TEXT,
+        image_base64 TEXT,
+        completed INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    `;
+
+    try {
+      await this.db.execute(createTasksTable);
+      console.log('SQLite tables created successfully');
+    } catch (error) {
+      console.error('Error creating SQLite tables:', error);
       throw error;
     }
   }
@@ -82,25 +128,44 @@ class DatabaseService {
 
   async addTask(task: Omit<ITask, 'id' | 'created_at'>): Promise<number> {
     try {
-      const tasks = this.getStoredTasks();
-      
-      let image_base64 = '';
-      if (this.isWeb && task.image_webview_path) {
-        image_base64 = await this.convertImageToBase64(task.image_webview_path);
+      if (this.isWeb) {
+        const tasks = this.getStoredTasks();
+        
+        let image_base64 = '';
+        if (task.image_webview_path) {
+          image_base64 = await this.convertImageToBase64(task.image_webview_path);
+        }
+        
+        const newTask: ITask = {
+          ...task,
+          id: this.generateId(),
+          created_at: new Date().toISOString(),
+          completed: false,
+          image_base64: image_base64
+        };
+        
+        tasks.unshift(newTask);
+        this.saveTasksToStorage(tasks);
+        
+        return newTask.id!;
+      } else {
+        if (!this.db) throw new Error('SQLite database not initialized');
+
+        const query = `
+          INSERT INTO tasks (text, image_filepath, image_webview_path, image_base64, completed) 
+          VALUES (?, ?, ?, ?, ?)
+        `;
+
+        const result = await this.db.run(query, [
+          task.text,
+          task.image_filepath,
+          task.image_webview_path || '',
+          task.image_base64 || '',
+          0
+        ]);
+
+        return result.changes?.lastId || 0;
       }
-      
-      const newTask: ITask = {
-        ...task,
-        id: this.generateId(),
-        created_at: new Date().toISOString(),
-        completed: false,
-        image_base64: image_base64
-      };
-      
-      tasks.unshift(newTask);
-      this.saveTasksToStorage(tasks);
-      
-      return newTask.id!;
     } catch (error) {
       console.error('Error adding task:', error);
       throw error;
@@ -109,16 +174,32 @@ class DatabaseService {
 
   async getAllTasks(): Promise<ITask[]> {
     try {
-      const tasks = this.getStoredTasks();
-      
       if (this.isWeb) {
+        const tasks = this.getStoredTasks();
         return tasks.map(task => ({
           ...task,
           image_webview_path: task.image_base64 || task.image_webview_path
         }));
+      } else {
+        if (!this.db) throw new Error('SQLite database not initialized');
+
+        const query = `
+          SELECT id, text, image_filepath, image_webview_path, image_base64, completed, created_at 
+          FROM tasks 
+          ORDER BY created_at DESC
+        `;
+
+        const result = await this.db.query(query);
+        return (result.values || []).map((row: any) => ({
+          id: row.id,
+          text: row.text,
+          image_filepath: row.image_filepath,
+          image_webview_path: row.image_webview_path,
+          image_base64: row.image_base64,
+          completed: Boolean(row.completed),
+          created_at: row.created_at
+        }));
       }
-      
-      return tasks;
     } catch (error) {
       console.error('Error getting tasks:', error);
       throw error;
@@ -127,9 +208,16 @@ class DatabaseService {
 
   async deleteTask(id: number): Promise<void> {
     try {
-      const tasks = this.getStoredTasks();
-      const filteredTasks = tasks.filter(task => task.id !== id);
-      this.saveTasksToStorage(filteredTasks);
+      if (this.isWeb) {
+        const tasks = this.getStoredTasks();
+        const filteredTasks = tasks.filter(task => task.id !== id);
+        this.saveTasksToStorage(filteredTasks);
+      } else {
+        if (!this.db) throw new Error('SQLite database not initialized');
+
+        const query = `DELETE FROM tasks WHERE id = ?`;
+        await this.db.run(query, [id]);
+      }
     } catch (error) {
       console.error('Error deleting task:', error);
       throw error;
@@ -138,15 +226,45 @@ class DatabaseService {
 
   async updateTask(id: number, updates: Partial<Omit<ITask, 'id' | 'created_at'>>): Promise<void> {
     try {
-      const tasks = this.getStoredTasks();
-      const taskIndex = tasks.findIndex(task => task.id === id);
-      
-      if (taskIndex === -1) {
-        throw new Error('Task not found');
+      if (this.isWeb) {
+        const tasks = this.getStoredTasks();
+        const taskIndex = tasks.findIndex(task => task.id === id);
+        
+        if (taskIndex === -1) {
+          throw new Error('Task not found');
+        }
+        
+        tasks[taskIndex] = { ...tasks[taskIndex], ...updates };
+        this.saveTasksToStorage(tasks);
+      } else {
+        if (!this.db) throw new Error('SQLite database not initialized');
+
+        const fields: string[] = [];
+        const values: any[] = [];
+
+        if (updates.text !== undefined) {
+          fields.push('text = ?');
+          values.push(updates.text);
+        }
+        if (updates.image_filepath !== undefined) {
+          fields.push('image_filepath = ?');
+          values.push(updates.image_filepath);
+        }
+        if (updates.image_webview_path !== undefined) {
+          fields.push('image_webview_path = ?');
+          values.push(updates.image_webview_path);
+        }
+        if (updates.completed !== undefined) {
+          fields.push('completed = ?');
+          values.push(updates.completed ? 1 : 0);
+        }
+
+        if (fields.length === 0) return;
+
+        values.push(id);
+        const query = `UPDATE tasks SET ${fields.join(', ')} WHERE id = ?`;
+        await this.db.run(query, values);
       }
-      
-      tasks[taskIndex] = { ...tasks[taskIndex], ...updates };
-      this.saveTasksToStorage(tasks);
     } catch (error) {
       console.error('Error updating task:', error);
       throw error;
@@ -155,15 +273,22 @@ class DatabaseService {
 
   async toggleTaskCompletion(id: number): Promise<void> {
     try {
-      const tasks = this.getStoredTasks();
-      const taskIndex = tasks.findIndex(task => task.id === id);
-      
-      if (taskIndex === -1) {
-        throw new Error('Task not found');
+      if (this.isWeb) {
+        const tasks = this.getStoredTasks();
+        const taskIndex = tasks.findIndex(task => task.id === id);
+        
+        if (taskIndex === -1) {
+          throw new Error('Task not found');
+        }
+        
+        tasks[taskIndex].completed = !tasks[taskIndex].completed;
+        this.saveTasksToStorage(tasks);
+      } else {
+        if (!this.db) throw new Error('SQLite database not initialized');
+
+        const query = `UPDATE tasks SET completed = NOT completed WHERE id = ?`;
+        await this.db.run(query, [id]);
       }
-      
-      tasks[taskIndex].completed = !tasks[taskIndex].completed;
-      this.saveTasksToStorage(tasks);
     } catch (error) {
       console.error('Error toggling task completion:', error);
       throw error;
@@ -171,7 +296,17 @@ class DatabaseService {
   }
 
   async closeDatabase(): Promise<void> {
-    console.log('Database connection closed');
+    if (!this.isWeb && this.db) {
+      try {
+        await this.db.close();
+        this.db = null;
+        console.log('SQLite database connection closed');
+      } catch (error) {
+        console.error('Error closing SQLite database:', error);
+      }
+    } else {
+      console.log('Database connection closed');
+    }
   }
 
   async clearAllTasks(): Promise<void> {

@@ -134,10 +134,21 @@ const Tab1: React.FC = () => {
 
   const takePhoto = async () => {
     try {
+      if (Capacitor.isNativePlatform()) {
+        const { camera: cameraPermission } = await Camera.checkPermissions();
+        if (cameraPermission === 'denied') {
+          const permission = await Camera.requestPermissions();
+          if (permission.camera === 'denied') {
+            throw new Error('Camera permission denied');
+          }
+        }
+      }
       const photo = await Camera.getPhoto({
         resultType: CameraResultType.Uri,
         source: CameraSource.Camera,
         quality: 100,
+        allowEditing: false,
+        saveToGallery: false,
       });
 
       const fileName = Date.now() + ".jpeg";
@@ -149,7 +160,15 @@ const Tab1: React.FC = () => {
         image_webview_path: savedFileImage.webviewPath 
       });
     } catch (error) {
-      console.error('Error taking photo:', error);
+      console.error('❌ Error taking photo:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('❌ Error details:', {
+        message: errorMessage,
+        stack: error instanceof Error ? error.stack : 'No stack trace',
+        name: error instanceof Error ? error.name : 'Unknown error type'
+      });
+      
+      alert(`Camera error: ${errorMessage || 'Unable to access camera'}`);
     }
   };
 
@@ -193,17 +212,19 @@ const Tab1: React.FC = () => {
     if (isPlatform("hybrid")) {
       // Display the new image by rewriting the 'file://' path to HTTP
       // Details: https://ionicframework.com/docs/building/webview#file-protocol
-      return {
+      const result = {
         filepath: savedFile.uri,
         webviewPath: Capacitor.convertFileSrc(savedFile.uri),
       };
+      return result;
     } else {
       // Use webPath to display the new image instead of base64 since it's
       // already loaded into memory
-      return {
+      const result = {
         filepath: fileName,
         webviewPath: photo.webPath,
       };
+      return result;
     }
   };
 
