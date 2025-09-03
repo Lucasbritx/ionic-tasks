@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   IonButton,
+  IonCheckbox,
   IonContent,
   IonFab,
   IonFabButton,
@@ -11,10 +12,13 @@ import {
   IonList,
   IonModal,
   IonPage,
+  IonSegment,
+  IonSegmentButton,
   IonTitle,
   IonToolbar,
   isPlatform,
   IonAlert,
+  IonLabel,
 } from "@ionic/react";
 import "./Tab1.css";
 import { camera, trash } from "ionicons/icons";
@@ -38,6 +42,7 @@ const DEFAULT_VALUES = {
   text: "",
   image_filepath: "",
   image_webview_path: "",
+  completed: false,
 };
 
 const Tab1: React.FC = () => {
@@ -45,6 +50,7 @@ const Tab1: React.FC = () => {
   const [newTask, setNewTask] = useState<ITask>(DEFAULT_VALUES);
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [filterSegment, setFilterSegment] = useState<string>('all');
   const [deleteAlert, setDeleteAlert] = useState<{
     isOpen: boolean;
     taskId?: number;
@@ -78,18 +84,18 @@ const Tab1: React.FC = () => {
   const addTask = async () => {
     if (newTask.text.trim()) {
       try {
-        // Create task object with current values
         const taskToAdd = {
           text: newTask.text,
           image_filepath: newTask.image_filepath,
-          image_webview_path: newTask.image_webview_path
+          image_webview_path: newTask.image_webview_path,
+          completed: false
         };
         
         await databaseService.addTask(taskToAdd);
         
         setNewTask(DEFAULT_VALUES);
         setIsOpen(false);
-        await loadTasks(); // Reload tasks from database
+        await loadTasks();
       } catch (error) {
         console.error('Error adding task:', error);
       }
@@ -99,10 +105,30 @@ const Tab1: React.FC = () => {
   const deleteTask = async (taskId: number) => {
     try {
       await databaseService.deleteTask(taskId);
-      await loadTasks(); // Reload tasks from database
+      await loadTasks();
       setDeleteAlert({ isOpen: false });
     } catch (error) {
       console.error('Error deleting task:', error);
+    }
+  };
+
+  const toggleTaskCompletion = async (taskId: number) => {
+    try {
+      await databaseService.toggleTaskCompletion(taskId);
+      await loadTasks();
+    } catch (error) {
+      console.error('Error toggling task completion:', error);
+    }
+  };
+
+  const getFilteredTasks = () => {
+    switch (filterSegment) {
+      case 'active':
+        return tasks.filter(task => !task.completed);
+      case 'completed':
+        return tasks.filter(task => task.completed);
+      default:
+        return tasks;
     }
   };
 
@@ -192,15 +218,42 @@ const Tab1: React.FC = () => {
       <IonContent className="ion-padding">
         <IonButton onClick={() => setIsOpen(true)}>Add Task</IonButton>
 
+        <IonSegment 
+          value={filterSegment} 
+          onIonChange={e => setFilterSegment(e.detail.value as string)}
+          style={{ marginTop: '10px', marginBottom: '10px' }}
+        >
+          <IonSegmentButton value="all">
+            <IonLabel>All</IonLabel>
+          </IonSegmentButton>
+          <IonSegmentButton value="active">
+            <IonLabel>Active</IonLabel>
+          </IonSegmentButton>
+          <IonSegmentButton value="completed">
+            <IonLabel>Completed</IonLabel>
+          </IonSegmentButton>
+        </IonSegment>
+
         {isLoading ? (
           <div>Loading tasks...</div>
         ) : (
           <IonList>
-            {tasks.map((task: ITask) => (
+            {getFilteredTasks().map((task: ITask) => (
               <IonItem key={task.id}>
-                <div style={{ width: '100%' }}>
+                <IonCheckbox
+                  checked={task.completed}
+                  onIonChange={() => task.id && toggleTaskCompletion(task.id)}
+                  slot="start"
+                />
+                <div style={{ width: '100%', marginLeft: '10px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <h3>{task.text}</h3>
+                    <h3 style={{ 
+                      textDecoration: task.completed ? 'line-through' : 'none',
+                      opacity: task.completed ? 0.6 : 1,
+                      color: task.completed ? '#888' : 'inherit'
+                    }}>
+                      {task.text}
+                    </h3>
                     <IonButton 
                       fill="clear" 
                       size="small" 
@@ -214,7 +267,13 @@ const Tab1: React.FC = () => {
                     <img 
                       src={task.image_webview_path} 
                       alt="Task"
-                      style={{ width: '100px', height: '100px', objectFit: 'cover', marginTop: '10px' }}
+                      style={{ 
+                        width: '100px', 
+                        height: '100px', 
+                        objectFit: 'cover', 
+                        marginTop: '10px',
+                        opacity: task.completed ? 0.6 : 1
+                      }}
                     />
                   )}
                 </div>
