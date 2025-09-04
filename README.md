@@ -10,7 +10,8 @@
 ## Demo
 
 ### Web Demo
-![Web demo](https://github.com/user-attachments/assets/f3446dba-5ec2-4000-914c-506bd9de18e1.mov)
+https://github.com/user-attachments/assets/44e54393-1693-448f-8df2-6ba02738dbcc
+
 
 ### iOS Demo  
 https://github.com/user-attachments/assets/187a2272-0c7c-418d-868d-9c44b49798da
