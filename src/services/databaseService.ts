@@ -276,8 +276,9 @@ class DatabaseService {
       if (this.isWeb) {
         const tasks = this.getStoredTasks();
         const taskIndex = tasks.findIndex(task => task.id === id);
-        
-        if (taskIndex === -1) {
+        const noTaskFound = taskIndex === -1;
+
+        if (noTaskFound) {
           throw new Error('Task not found');
         }
         
