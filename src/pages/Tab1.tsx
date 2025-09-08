@@ -160,9 +160,9 @@ const Tab1: React.FC = () => {
         image_webview_path: savedFileImage.webviewPath 
       });
     } catch (error) {
-      console.error('❌ Error taking photo:', error);
+      console.error('Error taking photo:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      console.error('❌ Error details:', {
+      console.error('Error details:', {
         message: errorMessage,
         stack: error instanceof Error ? error.stack : 'No stack trace',
         name: error instanceof Error ? error.name : 'Unknown error type'
