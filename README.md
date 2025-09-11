@@ -10,7 +10,6 @@
 ## Demo
 
 ### Web Demo
-https://github.com/user-attachments/assets/44e54393-1693-448f-8df2-6ba02738dbcc
 
 
 ### iOS Demo  
