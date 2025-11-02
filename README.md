@@ -1,12 +1,5 @@
 # ionic-tasks
 
-#TODO 
-[X] Integrate Ionic APIs
-[X] Use capacitor camera/library to add photos to tasks
-[X] Save data in Sqlite/LocalStorage
-[] Push notifications with the end date
-
-
 ## Demo
 
 ### Web Demo
